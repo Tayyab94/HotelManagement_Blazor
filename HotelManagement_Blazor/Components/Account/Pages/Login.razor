@@ -4,24 +4,25 @@
 @using Microsoft.AspNetCore.Authentication
 @using Microsoft.AspNetCore.Identity
 @using HotelManagement_Blazor.Data
+@using System.Security.Claims
 
 @inject SignInManager<ApplicationUser> SignInManager
 @inject ILogger<Login> Logger
 @inject NavigationManager NavigationManager
 @inject IdentityRedirectManager RedirectManager
+@inject UserManager<ApplicationUser> UserManager
 
-<PageTitle>Log in</PageTitle>
+<PageTitle>Login User</PageTitle>
 
-<h1>Log in</h1>
-<div class="row">
-    <div class="col-md-4">
+<div class="row d-flex justify-content-center">
+    <div class=" col-md-4">
         <section>
             <StatusMessage Message="@errorMessage" />
-            <EditForm Model="Input" method="post" OnValidSubmit="LoginUser" FormName="login">
+            <EditForm Model="Input" method="post" OnValidSubmit="LoginUser" FormName="login" Enhance="true">
                 <DataAnnotationsValidator />
                 <h2>Use a local account to log in.</h2>
                 <hr />
-                <ValidationSummary class="text-danger" role="alert" />
+                @*  <ValidationSummary class="text-danger" role="alert" /> *@
                 <div class="form-floating mb-3">
                     <InputText @bind-Value="Input.Email" class="form-control" autocomplete="username" aria-required="true" placeholder="name@example.com" />
                     <label for="email" class="form-label">Email</label>
@@ -55,13 +56,7 @@
             </EditForm>
         </section>
     </div>
-    <div class="col-md-6 col-md-offset-2">
-        <section>
-            <h3>Use another service to log in.</h3>
-            <hr />
-            <ExternalLoginPicker />
-        </section>
-    </div>
+
 </div>
 
 @code {
@@ -86,30 +81,36 @@
     }
 
     public async Task LoginUser()
-    {
-        // This doesn't count login failures towards account lockout
-        // To enable password failures to trigger account lockout, set lockoutOnFailure: true
-        var result = await SignInManager.PasswordSignInAsync(Input.Email, Input.Password, Input.RememberMe, lockoutOnFailure: false);
-        if (result.Succeeded)
         {
-            Logger.LogInformation("User logged in.");
-            RedirectManager.RedirectTo(ReturnUrl);
-        }
-        else if (result.RequiresTwoFactor)
+        var user = await UserManager.FindByEmailAsync(Input.Email);
+
+        if (user is null)
         {
-            RedirectManager.RedirectTo(
-                "Account/LoginWith2fa",
-                new() { ["returnUrl"] = ReturnUrl, ["rememberMe"] = Input.RememberMe });
+            errorMessage = "Error: Invalid Login attempt";
+            return;
         }
-        else if (result.IsLockedOut)
+        var result = await SignInManager.CheckPasswordSignInAsync(user,Input.Password,false);
+        if (!result.Succeeded)
         {
-            Logger.LogWarning("User account locked out.");
-            RedirectManager.RedirectTo("Account/Lockout");
+            errorMessage = "Error: Incorrect Password";
+            return;
         }
-        else
-        {
-            errorMessage = "Error: Invalid login attempt.";
-        }
+
+        Claim[] additionalClaims = [
+                            new Claim(AppConstants.CustomClaimTypes.FullName, user.FullName),
+                            new Claim(AppConstants.CustomClaimTypes.Image,user.Image??""),
+                            new Claim(AppConstants.CustomClaimTypes.RoleName, user.RoleName),
+                            new Claim(AppConstants.CustomClaimTypes.Email, user.Email),
+                            new Claim(AppConstants.CustomClaimTypes.Designation, user.Designation)
+                        ];
+
+
+        await SignInManager.SignInWithClaimsAsync(user, Input.RememberMe, additionalClaims);
+
+        Logger.LogInformation("User logged in.");
+        RedirectManager.RedirectTo(ReturnUrl);
+
+
     }
 
     private sealed class InputModel
